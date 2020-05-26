@@ -1,0 +1,22 @@
+{
+    "name": "herestate",
+    "version": "0.0.1",
+    "license": "MIT",
+    "types": "lib/index.d.ts",
+    "main": "lib/index.js",
+    "files": [
+        "/lib",
+        "/src"
+    ],
+    "dependencies": {
+        "react": "^16.13.1"
+    },
+    "devDependencies": {
+        "@types/react": "^16.9.35",
+        "typescript": "^3.9.3"
+    },
+    "scripts": {
+        "build": "tsc -p ./tsconfig.build.json",
+        "prepublish": "yarn --silent build"
+    }
+}
