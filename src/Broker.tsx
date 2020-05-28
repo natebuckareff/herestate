@@ -8,32 +8,16 @@ import React, {
     useMemo,
 } from 'react';
 
-function objectUnpack<T extends {}>(obj: T) {
-    const keys: (keyof T)[] = [];
-    const values: T[keyof T][] = [];
-    for (const k in obj) {
-        keys.push(k);
-        values.push(obj[k]);
-    }
-    return [...keys, ...values];
-}
-
 export namespace Broker {
-    export interface Context<S, W> {
+    export interface Context<S> {
         ref: { current: S };
         state: S;
-        writer: W;
         subscribe: (ids: string | string[], sub: Sub<S>) => void;
         unsubscribe: (ids: string | string[], sub: Sub<S>) => void;
     }
 
-    export interface Hook<I, S, W> {
-        (initialState: I, update: Update): HookResult<S, W>;
-    }
-
-    export interface HookResult<S, W> {
-        state: S;
-        writer: W;
+    export interface Hook<I, S> {
+        (update: Update, initialState: I): S;
     }
 
     export interface Update {
@@ -49,39 +33,53 @@ export namespace Broker {
     }
 }
 
-function useCore<I, S, W>(
-    useHook: Broker.Hook<I, S, W>,
+function useCore<I, S>(
+    useHook: Broker.Hook<I, S>,
     initialState: I,
-): Broker.Context<S, W> {
-    // Setup callback to capture updates within the hook
-    let updates: string[] = [];
-    const update: Broker.Update = (id: string) => updates.push(id);
+): Broker.Context<S> {
+    // Flag to reset the updates without having to do an extra `setUpdates()`
+    const resetUpdates = useRef(false);
 
-    // Subscription map
-    const subs = useRef<Broker.Subs<S>>({});
+    // Setup state and callback to capture updates within the hook. We use state
+    // instead of a ref so that if all the hook does is `update()` it will still
+    // trigger a rerender. Alternatively, we could have `useHook` return a list
+    // of ids to update
+    const [updates, setUpdates] = useState<string[]>([]);
+    const update: Broker.Update = (id: string) => {
+        if (resetUpdates.current) {
+            resetUpdates.current = false;
+            setUpdates([id]);
+        } else {
+            setUpdates(ids => [...ids, id]);
+        }
+    };
 
-    // Run the hook and get the output
-    const { state, writer } = useHook(initialState, update);
+    // Get the next state
+    const state = useHook(update, initialState);
 
-    // Ref so we always have a snapshot of the current state
+    // Ref used by ConstContext so it can always read the current state
     const ref = useRef(state);
 
-    // Keep the ref up to date
+    console.log(updates);
+
+    // Keep the ref up to date and check for updates
     useEffect(() => {
         ref.current = state;
-    }, [state]);
-
-    // Check to see if there are update to run
-    useEffect(() => {
-        for (const id of updates) {
-            const cbs = subs.current[id];
-            if (cbs !== undefined) {
-                for (const f of cbs) {
-                    f(ref.current);
+        if (updates.length > 0) {
+            for (const id of updates) {
+                const cbs = subs.current[id];
+                if (cbs !== undefined) {
+                    for (const f of cbs) {
+                        f(ref.current);
+                    }
                 }
             }
+            resetUpdates.current = true;
         }
-    }, [updates]);
+    }, [state, updates]);
+
+    // Mapping from ids to active subscriptions
+    const subs = useRef<Broker.Subs<S>>({});
 
     const subscribe = useCallback(
         (ids: string | string[], sub: Broker.Sub<S>) => {
@@ -94,7 +92,7 @@ function useCore<I, S, W>(
                 s.push(sub);
             }
 
-            // Bootstrap subscriber with state
+            // Bootstrap subscriber with initial state
             sub(ref.current);
         },
         [],
@@ -115,69 +113,59 @@ function useCore<I, S, W>(
         [],
     );
 
-    // Check if the contents of writer actually changed
-    const w = useMemo(() => writer, [...objectUnpack(writer)]);
-
-    return { ref, state, writer: w, subscribe, unsubscribe };
+    return { ref, state, subscribe, unsubscribe };
 }
 
 export interface BrokerProviderProps<I> {
     initialState: I;
 }
 
-export function createBroker<I, S, W>(useHook: Broker.Hook<I, S, W>) {
-    const RefContext = React.createContext<Broker.Context<S, W> | null>(null);
-    const StateContext = React.createContext<Broker.Context<S, W> | null>(null);
-    const WriterContext = React.createContext<Broker.Context<S, W> | null>(
-        null,
-    );
+export function createBroker<I, S>(useHook: Broker.Hook<I, S>) {
+    const ConstContext = React.createContext<Broker.Context<S> | null>(null);
+    const StateContext = React.createContext<Broker.Context<S> | null>(null);
 
-    const useSubscription = (ids: string | string[], isSubbed = true) => {
-        const ctx = useContext(RefContext)!;
+    function unscalar<T>(x: T | T[]) {
+        return Array.isArray(x) ? x : [x];
+    }
 
-        const [subbed, setSubbed] = useState(isSubbed);
+    const useSubscription = (initialIds: string | string[]) => {
+        const ctx = useContext(ConstContext)!;
+
+        const [ids, setIds] = useState(unscalar(initialIds));
         const [state, setState] = useState(ctx.ref.current);
 
         useEffect(() => {
-            if (subbed) {
+            if (ids.length > 0) {
                 ctx.subscribe(ids, setState);
                 return () => ctx.unsubscribe(ids, setState);
             }
-            return;
-        }, [subbed]);
+        }, [ids]);
 
-        return [
-            { ...state, ...ctx.writer },
-            { subbed, setSubbed },
-        ] as const;
+        return [state, { ids, setIds }] as const;
     };
 
     const useContainer = () => {
-        const ctx = useContext(StateContext)!;
-        return { ...ctx.state, ...ctx.writer };
+        const { state } = useContext(StateContext)!;
+        return state;
     };
 
     const useWriter = () => {
-        const ctx = useContext(WriterContext)!;
-        return ctx.writer;
+        const { state } = useContext(ConstContext)!;
+        return state;
     };
 
     const Provider: FC<BrokerProviderProps<I>> = props => {
         const { initialState, children } = props;
         const ctx = useCore(useHook, initialState);
-
         const ref = useMemo(() => ctx, []);
         const state = useMemo(() => ctx, [ctx.state]);
-        const writer = useMemo(() => ctx, [ctx.writer]);
 
         return (
-            <RefContext.Provider value={ref}>
+            <ConstContext.Provider value={ref}>
                 <StateContext.Provider value={state}>
-                    <WriterContext.Provider value={writer}>
-                        {children}
-                    </WriterContext.Provider>
+                    {children}
                 </StateContext.Provider>
-            </RefContext.Provider>
+            </ConstContext.Provider>
         );
     };
 

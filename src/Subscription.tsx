@@ -61,9 +61,6 @@ export function createSubscription<I, S>(useHook: Subscription.Hook<I, S>) {
     const Context = React.createContext<Subscription.Context<S> | null>(null);
 
     const useSubscription = (isSubbed = true) => {
-        // `Context` won't change and trigger updates because the output of
-        // `useCore` is memoized; instead we use the ref to get update-to-date
-        // state
         const ctx = useContext(Context)!;
 
         const [subbed, setSubbed] = useState(isSubbed);
@@ -74,7 +71,6 @@ export function createSubscription<I, S>(useHook: Subscription.Hook<I, S>) {
                 ctx.subscribe(setState);
                 return () => ctx.unsubscribe(setState);
             }
-            return;
         }, [subbed]);
 
         return [state, subbed, setSubbed] as const;
