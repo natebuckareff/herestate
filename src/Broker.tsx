@@ -60,8 +60,6 @@ function useCore<I, S>(
     // Ref used by ConstContext so it can always read the current state
     const ref = useRef(state);
 
-    console.log(updates);
-
     // Keep the ref up to date and check for updates
     useEffect(() => {
         ref.current = state;
