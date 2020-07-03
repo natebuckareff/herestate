@@ -17,6 +17,7 @@
     },
     "scripts": {
         "build": "tsc -p ./tsconfig.build.json",
-        "prepublish": "yarn --silent build"
+        "prepublish": "yarn --silent build",
+        "postinstall": "yarn --silent build"
     }
 }
