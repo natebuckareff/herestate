@@ -1,11 +1,13 @@
+import produce, { castImmutable, Immutable } from 'immer';
 import React, {
     FC,
-    useRef,
     useCallback,
-    useEffect,
     useContext,
-    useState,
+    useEffect,
     useMemo,
+    useReducer,
+    useRef,
+    useState,
 } from 'react';
 
 export namespace Broker {
@@ -173,4 +175,21 @@ export function createBroker<I, S>(useHook: Broker.Hook<I, S>) {
         useWriter,
         Provider,
     };
+}
+
+export function createBrokerReducer<S, A>(
+    updater: (draft: S, action: A, update: Broker.Update) => void,
+) {
+    function useHook(update: Broker.Update, initialState: S) {
+        const curried = produce((draft: S, action: A) =>
+            updater(draft, action, update),
+        );
+        type T = React.Reducer<Immutable<S>, A>;
+        const [state, dispatch] = useReducer<T>(
+            curried,
+            castImmutable(initialState),
+        );
+        return { state, dispatch };
+    }
+    return createBroker(useHook);
 }
