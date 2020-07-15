@@ -1,6 +1,6 @@
 {
     "name": "herestate",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "license": "MIT",
     "types": "lib/index.d.ts",
     "main": "lib/index.js",
