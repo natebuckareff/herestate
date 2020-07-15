@@ -128,7 +128,17 @@ export function createBroker<I, S>(useHook: Broker.Hook<I, S>) {
         return Array.isArray(x) ? x : [x];
     }
 
-    const useSubscription = (initialIds: string | string[]) => {
+    type Subscription<S> = [
+        S,
+        {
+            ids: string[];
+            setIds: React.Dispatch<React.SetStateAction<string[]>>;
+        },
+    ];
+
+    const useSubscription = (
+        initialIds: string | string[],
+    ): Subscription<S> => {
         const ctx = useContext(ConstContext)!;
 
         const [ids, setIds] = useState(unscalar(initialIds));
@@ -141,7 +151,7 @@ export function createBroker<I, S>(useHook: Broker.Hook<I, S>) {
             }
         }, [ids]);
 
-        return [state, { ids, setIds }] as const;
+        return [state, { ids, setIds }];
     };
 
     const useContainer = () => {
